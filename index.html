@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Generator with AES Encryption</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- CryptoJS Library for AES -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <!-- Custom Retro Style -->
+    <style>
+        body {
+            background-color: #f4e9d8;
+            font-family: 'Courier New', Courier, monospace;
+            color: #4b3832;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .form-container {
+            background-color: #fff3e0;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .form-control {
+            background-color: #fff8f0;
+            border: 1px solid #c8a78e;
+            color: #4b3832;
+        }
+        .btn-custom {
+            background-color: #c8a78e;
+            border: none;
+            color: #4b3832;
+            font-weight: bold;
+        }
+        .btn-custom:hover {
+            background-color: #b38f72;
+        }
+        .qrcode-container {
+            margin-top: 1rem;
+            text-align: center;
+            cursor: pointer;
+        }
+        .encrypted-text, .decrypted-text {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+            word-wrap: break-word;
+        }
+        .decrypted-text {
+            color: #333;
+            font-weight: bold;
+        }
+        /* Styling for the QR Code in the modal */
+        #qrModal .modal-body img {
+            max-width: 100%;
+            height: auto;
+            border: 5px solid #fff;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="form-container">
+            <h3 class="text-center mb-4">QR Code Generator</h3>
+            <form id="qrForm">
+                <div class="mb-3">
+                    <label for="urlInput" class="form-label">Enter URL</label>
+                    <input type="text" class="form-control" id="urlInput" placeholder="https://example.com" required>
+                    <div id="urlError" class="text-danger mt-1"></div>
+                </div>
+                <button type="submit" class="btn btn-custom w-100">Generate QR Code</button>
+            </form>
+            <div class="qrcode-container" id="qrcodeContainer"></div>
+            <div class="encrypted-text" id="encryptedText"></div>
+            <div class="decrypted-text" id="decryptedText"></div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Modal -->
+    <div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-light">
+                    <h5 class="modal-title" id="qrModalLabel">QR Code Preview</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img id="qrPreview" src="" alt="QR Code Preview">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- Bootstrap JS (Required for Modal) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Kjua QR Code Library -->
+    <script src="https://cdn.jsdelivr.net/npm/kjua/dist/kjua.min.js"></script>
+    <script>
+        const ENCRYPTION_KEY = "my-secret-key-123"; // Kunci enkripsi (harus sama di Kotlin)
+
+        $(document).ready(function () {
+            let qrCodeCanvas = null; // Untuk menyimpan referensi ke elemen canvas QR Code
+
+            // Function to validate URL
+            function isValidUrl(url) {
+                try {
+                    new URL(url);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            // Function to encrypt URL using AES
+            // Function to encrypt URL using AES/ECB/PKCS7Padding to match Android
+            function encryptUrl(url) {
+                // Create a consistent key of exactly 16 bytes for AES-128
+                const key = CryptoJS.enc.Utf8.parse(ENCRYPTION_KEY.substring(0, 16));
+                
+                // Use ECB mode and PKCS7 padding to match Android's PKCS5Padding
+                const encrypted = CryptoJS.AES.encrypt(url, key, {
+                    mode: CryptoJS.mode.ECB,
+                    padding: CryptoJS.pad.Pkcs7
+                }).toString();
+                
+                return encrypted;
+            }
+
+            // Function to decrypt URL using AES/ECB/PKCS7Padding
+            function decryptUrl(encryptedText) {
+                // Create a consistent key of exactly 16 bytes for AES-128
+                const key = CryptoJS.enc.Utf8.parse(ENCRYPTION_KEY.substring(0, 16));
+                
+                const decrypted = CryptoJS.AES.decrypt(encryptedText, key, {
+                    mode: CryptoJS.mode.ECB,
+                    padding: CryptoJS.pad.Pkcs7
+                }).toString(CryptoJS.enc.Utf8);
+                
+                return decrypted;
+            }
+
+            // Handle form submission
+            $('#qrForm').on('submit', function (e) {
+                e.preventDefault();
+
+                // Clear previous error messages
+                $('#urlError').text('');
+
+                // Get the input value
+                const url = $('#urlInput').val().trim();
+
+                // Validate URL
+                if (!isValidUrl(url)) {
+                    $('#urlError').text('Please enter a valid URL.');
+                    return;
+                }
+
+                // Encrypt the URL
+                const encryptedUrl = encryptUrl(url);
+
+                console.log('Encrypted URL:', encryptedUrl); // Debugging
+
+                // Generate QR Code using Kjua
+                $('#qrcodeContainer').empty();
+                $('#encryptedText').text(''); // Clear previous encrypted text
+                $('#decryptedText').text(''); // Clear previous decrypted text
+                try {
+                    qrCodeCanvas = kjua({
+                        text: encryptedUrl,
+                        render: 'canvas', // Use canvas rendering
+                        size: 200, // QR Code size in pixels
+                        fill: '#4b3832', // QR Code color
+                        quiet: 1, // Quiet zone size
+                        crisp: true // Crisp rendering
+                    });
+                    $('#qrcodeContainer').append(qrCodeCanvas);
+
+                    // Display encrypted URL below QR Code
+                    $('#encryptedText').text(`Encrypted Text: ${encryptedUrl}`);
+
+                    // Decrypt the encrypted URL and display it
+                    const decryptedUrl = decryptUrl(encryptedUrl);
+                    $('#decryptedText').text(`Decrypted URL: ${decryptedUrl}`);
+
+                    // Show modal after generating QR Code
+                    const qrCodeDataUrl = qrCodeCanvas.toDataURL(); // Convert canvas to image data URL
+                    $('#qrPreview').attr('src', qrCodeDataUrl); // Set the image source
+                    $('#qrModal').modal('show'); // Show the modal
+                } catch (err) {
+                    console.error('Critical error:', err);
+                    alert('An unexpected error occurred.');
+                }
+            });
+
+            // Show modal when QR Code is clicked
+            $('#qrcodeContainer').on('click', 'canvas', function () {
+                if (qrCodeCanvas) {
+                    const qrCodeDataUrl = qrCodeCanvas.toDataURL(); // Convert canvas to image data URL
+                    $('#qrPreview').attr('src', qrCodeDataUrl); // Set the image source
+                    $('#qrModal').modal('show'); // Show the modal
+                }
+            });
+        });
+    </script>
+</body>
+</html>
