@@ -193,12 +193,31 @@
 
             // Function to validate URL
             function isValidUrl(url) {
-                try {
-                    new URL(url);
+                // Cek apakah input adalah IP address yang valid
+                const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+                
+                // Cek apakah input adalah domain yang valid
+                const domainRegex = /^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$/;
+                
+                // Jika input adalah IP address yang valid
+                if (ipRegex.test(url)) {
                     return true;
-                } catch (e) {
-                    return false;
                 }
+                
+                // Jika input dimulai dengan www. atau langsung domain
+                if (domainRegex.test(url) || domainRegex.test(url.replace(/^www\./, ''))) {
+                    return true;
+                }
+                
+                // Jika input sudah memiliki protokol (http/https), gunakan validasi URL bawaan
+                try {
+                    if (url.startsWith('http://') || url.startsWith('https://')) {
+                        new URL(url);
+                        return true;
+                    }
+                } catch (e) {}
+                
+                return false;
             }
 
             // Function to encrypt URL using AES
