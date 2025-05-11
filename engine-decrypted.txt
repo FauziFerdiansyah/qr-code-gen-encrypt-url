@@ -1,0 +1,273 @@
+const ENCRYPTION_KEY = "my-secret-key-123"; // Kunci enkripsi (harus sama di Kotlin)
+
+$(document).ready(function () {
+    let qrCodeCanvas = null; // Untuk menyimpan referensi ke elemen canvas QR Code
+    let logoImage = null; // Untuk menyimpan logo yang di-upload
+    
+    // Update logo size value display
+    $('#logoSizeSlider').on('input', function() {
+        $('#logoSizeValue').text($(this).val());
+    });
+
+    // Preview logo saat di-upload
+    $('#logoInput').on('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                logoImage = new Image();
+                logoImage.crossOrigin = "Anonymous"; // Untuk menghindari masalah CORS
+                logoImage.src = event.target.result;
+                logoImage.onload = function() {
+                    $('#logoPreview').attr('src', event.target.result).show();
+                }
+            }
+            reader.readAsDataURL(file);
+        } else {
+            logoImage = null;
+            $('#logoPreview').hide();
+        }
+    });
+
+    // Function to validate URL
+    function isValidUrl(url) {
+        // Cek apakah input adalah IP address yang valid
+        const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        
+        // Cek apakah input adalah domain yang valid
+        const domainRegex = /^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,}$/;
+        
+        // Jika input adalah IP address yang valid
+        if (ipRegex.test(url)) {
+            return true;
+        }
+        
+        // Jika input dimulai dengan www. atau langsung domain
+        if (domainRegex.test(url) || domainRegex.test(url.replace(/^www\./, ''))) {
+            return true;
+        }
+        
+        // Jika input sudah memiliki protokol (http/https), gunakan validasi URL bawaan
+        try {
+            if (url.startsWith('http://') || url.startsWith('https://')) {
+                new URL(url);
+                return true;
+            }
+        } catch (e) {}
+        
+        return false;
+    }
+
+    // Function to encrypt URL using AES
+    function encryptUrl(url) {
+        // Create a consistent key of exactly 16 bytes for AES-128
+        const key = CryptoJS.enc.Utf8.parse(ENCRYPTION_KEY.substring(0, 16));
+        
+        // Use ECB mode and PKCS7 padding to match Android's PKCS5Padding
+        const encrypted = CryptoJS.AES.encrypt(url, key, {
+            mode: CryptoJS.mode.ECB,
+            padding: CryptoJS.pad.Pkcs7
+        }).toString();
+        
+        return encrypted;
+    }
+
+    // Function to decrypt URL using AES/ECB/PKCS7Padding
+    function decryptUrl(encryptedText) {
+        // Create a consistent key of exactly 16 bytes for AES-128
+        const key = CryptoJS.enc.Utf8.parse(ENCRYPTION_KEY.substring(0, 16));
+        
+        const decrypted = CryptoJS.AES.decrypt(encryptedText, key, {
+            mode: CryptoJS.mode.ECB,
+            padding: CryptoJS.pad.Pkcs7
+        }).toString(CryptoJS.enc.Utf8);
+        
+        return decrypted;
+    }
+
+    // Helper function to draw rounded rectangle
+    function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+        if (typeof radius === 'undefined') {
+            radius = 5;
+        }
+        if (typeof radius === 'number') {
+            radius = {tl: radius, tr: radius, br: radius, bl: radius};
+        } else {
+            var defaultRadius = {tl: 0, tr: 0, br: 0, bl: 0};
+            for (var side in defaultRadius) {
+                radius[side] = radius[side] || defaultRadius[side];
+            }
+        }
+        ctx.beginPath();
+        ctx.moveTo(x + radius.tl, y);
+        ctx.lineTo(x + width - radius.tr, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
+        ctx.lineTo(x + width, y + height - radius.br);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
+        ctx.lineTo(x + radius.bl, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
+        ctx.lineTo(x, y + radius.tl);
+        ctx.quadraticCurveTo(x, y, x + radius.tl, y);
+        ctx.closePath();
+        if (fill) {
+            ctx.fill();
+        }
+        if (stroke) {
+            ctx.stroke();
+        }
+    }
+
+    // Function to create QR code with a logo in the middle
+    function createQRCodeWithLogo(encryptedUrl) {
+        // Generate QR Code using Kjua with high error correction (for better logo compatibility)
+        $('#qrcodeContainer').empty();
+        
+        // Create base QR code with high error correction
+        const qrSize = 600; // Increased size for better quality (doubled from 300)
+        
+        const kjuaOptions = {
+            text: encryptedUrl,
+            render: 'canvas',
+            size: qrSize,
+            fill: '#4b3832',
+            quiet: 2, // Quiet zone increased for better scan reliability
+            crisp: true,
+            minVersion: 8, // Minimum QR version for better error correction capability
+            ecLevel: 'H' // Highest error correction level (can restore up to 30% of damaged QR)
+        };
+        
+        // Generate QR Code
+        const qrCode = kjua(kjuaOptions);
+        
+        // Add logo if available
+        if (logoImage) {
+            // Create a new canvas with 2x device pixel ratio for high resolution
+            const canvas = document.createElement('canvas');
+            const pixelRatio = window.devicePixelRatio || 2; // Use at least 2x for better quality
+            
+            canvas.width = qrSize * pixelRatio;
+            canvas.height = qrSize * pixelRatio;
+            canvas.style.width = qrSize + 'px';
+            canvas.style.height = qrSize + 'px';
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Scale context according to pixel ratio for sharper rendering
+            ctx.scale(pixelRatio, pixelRatio);
+            
+            // Configure image rendering properties
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            
+            // Draw QR code on canvas (original size in logical pixels)
+            ctx.drawImage(qrCode, 0, 0, qrSize, qrSize);
+            
+            // Get logo size from slider (% of QR code size)
+            const logoSizePercentage = $('#logoSizeSlider').val() / 100;
+            const logoSize = Math.round(qrSize * logoSizePercentage);
+            const logoX = Math.round((qrSize - logoSize) / 2);
+            const logoY = Math.round((qrSize - logoSize) / 2);
+            
+            // Add white background for logo if checked with padding
+            if ($('#logoBackgroundCheck').is(':checked')) {
+                const padding = Math.round(logoSize * 0.1); // 10% padding around logo
+                ctx.fillStyle = 'white';
+                roundRect(ctx, logoX - padding, logoY - padding, 
+                          logoSize + (padding * 2), logoSize + (padding * 2), 
+                          padding, true, false);
+            }
+            
+            // Calculate aspect ratio to maintain proportions
+            const aspectRatio = logoImage.width / logoImage.height;
+            let logoWidth, logoHeight;
+            
+            if (aspectRatio > 1) {
+                // Image is wider than tall
+                logoWidth = logoSize;
+                logoHeight = logoSize / aspectRatio;
+            } else {
+                // Image is taller than wide or square
+                logoHeight = logoSize;
+                logoWidth = logoSize * aspectRatio;
+            }
+            
+            // Center the logo
+            const centerX = logoX + (logoSize - logoWidth) / 2;
+            const centerY = logoY + (logoSize - logoHeight) / 2;
+            
+            // Draw the logo directly (improved rendering quality)
+            ctx.drawImage(logoImage, centerX, centerY, logoWidth, logoHeight);
+            
+            // Create a display canvas with downsampling for better quality
+            const displayCanvas = document.createElement('canvas');
+            displayCanvas.width = qrSize;
+            displayCanvas.height = qrSize;
+            
+            const displayCtx = displayCanvas.getContext('2d');
+            displayCtx.imageSmoothingEnabled = true;
+            displayCtx.imageSmoothingQuality = 'high';
+            
+            // Draw the high-resolution canvas onto the display canvas
+            displayCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 
+                                0, 0, displayCanvas.width, displayCanvas.height);
+            
+            return displayCanvas;
+        } else {
+            return qrCode;
+        }
+    }
+
+    // Handle form submission
+    $('#qrForm').on('submit', function (e) {
+        e.preventDefault();
+
+        // Clear previous error messages
+        $('#urlError').text('');
+
+        // Get the input value
+        const url = $('#urlInput').val().trim();
+
+        // Validate URL
+        if (!isValidUrl(url)) {
+            $('#urlError').text('Please enter a valid URL.');
+            return;
+        }
+
+        // Encrypt the URL
+        const encryptedUrl = encryptUrl(url);
+
+        // Generate QR Code with logo
+        $('#encryptedText').text(''); // Clear previous encrypted text
+        $('#decryptedText').text(''); // Clear previous decrypted text
+        try {
+            qrCodeCanvas = createQRCodeWithLogo(encryptedUrl);
+            $('#qrcodeContainer').append(qrCodeCanvas);
+
+            // Display encrypted URL below QR Code
+            $('#encryptedText').text(`Encrypted Text: ${encryptedUrl}`);
+
+            // Decrypt the encrypted URL and display it
+            const decryptedUrl = decryptUrl(encryptedUrl);
+            $('#decryptedText').text(`Decrypted URL: ${decryptedUrl}`);
+
+            // Show modal after generating QR Code
+            const qrCodeDataUrl = qrCodeCanvas.toDataURL('image/png'); // Convert canvas to image data URL
+            $('#qrPreview').attr('src', qrCodeDataUrl); // Set the image source
+            $('#downloadQR').attr('href', qrCodeDataUrl); // Set download link
+            $('#qrModal').modal('show'); // Show the modal
+        } catch (err) {
+            console.error('Critical error:', err);
+            alert('An unexpected error occurred.');
+        }
+    });
+
+    // Show modal when QR Code is clicked
+    $('#qrcodeContainer').on('click', 'canvas', function () {
+        if (qrCodeCanvas) {
+            const qrCodeDataUrl = qrCodeCanvas.toDataURL('image/png'); // Convert canvas to image data URL
+            $('#qrPreview').attr('src', qrCodeDataUrl); // Set the image source
+            $('#downloadQR').attr('href', qrCodeDataUrl); // Update download link
+            $('#qrModal').modal('show'); // Show the modal
+        }
+    });
+});
